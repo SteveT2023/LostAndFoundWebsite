@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homepage</title>
+    <link rel="stylesheet" href="homepage.css">
+</head>
+<body>
+    <h1 class="heading" id="welcome-heading">Welcome User!</h1>
+    <script>
+        fetch('/getUserName')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('User not logged in');
+                }
+                return response.json();
+            })
+            .then(data => {
+                const heading = document.getElementById('welcome-heading');
+                heading.textContent = `Welcome ${data.name}!`;
+            })
+            .catch(err => console.error('Error fetching user name:', err));
+
+        function logout() {
+            fetch('/logout', { method: 'POST' })
+                .then(() => {
+                    window.location.href = '/login.html';
+                })
+                .catch(err => console.error('Error logging out:', err));
+        }
+
+        function showReportForm() {
+            const form = document.getElementById('formContainer');
+            form.style.display = 'block';
+            form.classList.add('fade-in');
+        }
+
+        function closeReportForm() {
+            const form = document.getElementById('formContainer');
+            form.style.display = 'none';
+        }
+
+        function submitForm(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            fetch('/reportLostItem', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Error reporting item');
+                }
+                alert('Item Reported.');
+                const form = document.getElementById('formContainer');
+                form.style.display = 'none';
+                event.target.reset();
+            })
+            .catch(err => console.error('Error:', err));
+        }
+
+        function showItemDetails(item) {
+            const detailsContainer = document.getElementById('detailsContainer');
+            detailsContainer.querySelector('#detailsName').textContent = `Name: ${item.item_name}`;
+            detailsContainer.querySelector('#detailsDescription').textContent = `Description: ${item.description}`;
+            detailsContainer.querySelector('#detailsUser').textContent = `Posted By: ${item.user_name === 'You' ? 'You' : item.user_name}`;
+            const imageElement = detailsContainer.querySelector('#detailsImage');
+            console.log('Image path:', item.image_path);
+            if (item.image_path) {
+                imageElement.src = item.image_path.startsWith('/uploads/') ? item.image_path : `/uploads/${item.image_path}`;
+                imageElement.alt = `${item.item_name} Image`;
+                imageElement.style.display = 'block';
+            } else {
+                imageElement.style.display = 'none';
+            }
+
+            const claimButton = detailsContainer.querySelector('#claimButton');
+            if (item.user_name === 'You') {
+                claimButton.style.display = 'none';
+            } else {
+                claimButton.style.display = 'block';
+                claimButton.onclick = () => sendClaimRequest(item);
+            }
+
+            detailsContainer.style.display = 'block';
+        }
+
+        function sendClaimRequest(item) {
+            const claimFormContainer = document.getElementById('claimFormContainer');
+            claimFormContainer.style.display = 'block';
+            claimFormContainer.classList.add('fade-in');
+
+            const itemIdInput = document.getElementById('claim-item-id');
+            if (item.item_id) {
+                itemIdInput.value = item.item_id;
+                console.log('Setting item_id:', item.item_id);
+            } else {
+                console.error('item_id is undefined or null:', item);
+                alert('Error: item_id is missing. Please try again.');
+                claimFormContainer.style.display = 'none';
+                return;
+            }
+
+            const claimForm = document.getElementById('claimForm');
+            claimForm.onsubmit = (event) => {
+                event.preventDefault();
+                const formData = new FormData(claimForm);
+
+                console.log('Submitting form data:', Object.fromEntries(formData.entries()));
+
+                fetch('/submitClaim', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error submitting claim');
+                    }
+                    return response.text();
+                })
+                .then(message => {
+                    alert(message || 'Claim submitted successfully!');
+                    claimFormContainer.style.display = 'none';
+                    claimForm.reset();
+                })
+                .catch(err => console.error('Error:', err));
+            };
+        }
+
+        function closeClaimForm() {
+            const claimFormContainer = document.getElementById('claimFormContainer');
+            claimFormContainer.style.display = 'none';
+        }
+
+        function closeDetailsContainer() {
+            const detailsContainer = document.getElementById('detailsContainer');
+            detailsContainer.style.display = 'none';
+        }
+
+        function showItemStatus() {
+            const statusContainer = document.getElementById('statusContainer');
+            statusContainer.style.display = 'block';
+            statusContainer.classList.add('fade-in');
+
+            const claimRequestsContainer = document.getElementById('claimRequestsContainer');
+            claimRequestsContainer.innerHTML = '';
+
+            fetch('/getUserItems')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error fetching items');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const tableBody = document.getElementById('statusTableBody');
+                    tableBody.innerHTML = ''; 
+                    const tableHeader = document.getElementById('statusTableHeader');
+                    tableHeader.innerHTML = `
+                        <tr>
+                            <th>Item Name</th>
+                            <th>Status</th>
+                        </tr>
+                    `;
+
+                    data.items.forEach(item => {
+                        const row = document.createElement('tr');
+                        const nameCell = document.createElement('td');
+                        const statusCell = document.createElement('td');
+
+                        nameCell.textContent = item.item_name;
+                        nameCell.style.cursor = 'pointer';
+                        nameCell.onclick = () => showItemDetails(item);
+
+                        statusCell.textContent = item.status;
+                        statusCell.style.cursor = 'pointer';
+                        statusCell.onclick = () => fetchClaimDetails(item.item_id);
+
+                        if (item.status === 'Lost') {
+                            statusCell.style.color = 'red';
+                        } else if (item.status === 'Claimed') {
+                            statusCell.style.color = 'green';
+                        }
+
+                        row.appendChild(nameCell);
+                        row.appendChild(statusCell);
+                        tableBody.appendChild(row);
+                    });
+
+                    fetch('/getUserClaims')
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('Error fetching claims');
+                            }
+                            return response.json();
+                        })
+                        .then(claimData => {
+                            const claimSubHeading = document.createElement('h4');
+                            claimSubHeading.className = 'subHeading';
+                            claimSubHeading.textContent = 'Claim Requests';
+
+                            const claimTable = document.createElement('table');
+                            claimTable.className = 'itemTable';
+                            const claimTableHeader = document.createElement('thead');
+                            claimTableHeader.innerHTML = `
+                                <tr>
+                                    <th>Claim ID</th>
+                                    <th>Item Name</th>
+                                    <th>Status</th>
+                                </tr>
+                            `;
+                            const claimTableBody = document.createElement('tbody');
+
+                            claimData.claims.forEach(claim => {
+                                const row = document.createElement('tr');
+                                const claimIdCell = document.createElement('td');
+                                const itemNameCell = document.createElement('td');
+                                const claimStatusCell = document.createElement('td');
+
+                                claimIdCell.textContent = claim.claim_id;
+                                itemNameCell.textContent = claim.item_name;
+                                claimStatusCell.textContent = claim.status;
+
+                                row.appendChild(claimIdCell);
+                                row.appendChild(itemNameCell);
+                                row.appendChild(claimStatusCell);
+                                claimTableBody.appendChild(row);
+                            });
+
+                            claimTable.appendChild(claimTableHeader);
+                            claimTable.appendChild(claimTableBody);
+
+                            claimRequestsContainer.appendChild(claimSubHeading);
+                            claimRequestsContainer.appendChild(claimTable);
+                        })
+                        .catch(err => console.error('Error fetching claims:', err));
+                })
+                .catch(err => console.error('Error fetching items:', err));
+        }
+
+        function fetchClaimDetails(itemId) {
+            fetch(`/getClaimDetails?item_id=${itemId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error fetching claim details');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const modal = document.getElementById('claimDetailsModal');
+                    modal.querySelector('#modalEmail').textContent = `Email: ${data.email}`;
+                    modal.querySelector('#modalPhone').textContent = `Phone: ${data.phone_number}`;
+                    modal.querySelector('#modalProof').textContent = `Proof: ${data.proof_description}`;
+                    modal.querySelector('#approveButton').onclick = () => handleApprove(data.claim_id);
+                    modal.querySelector('#rejectButton').onclick = () => handleReject(itemId);
+                    modal.style.display = 'block';
+                })
+                .catch(err => console.error('Error fetching claim details:', err));
+        }
+
+        function handleApprove(claimId) {
+            if (!claimId) {
+                console.error('Missing claim_id');
+                alert('Error: Missing claim ID.');
+                return;
+            }
+
+            fetch(`/approveClaim`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ claim_id: claimId })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Error approving claim');
+                }
+                alert('Claim successfully approved!');
+                closeClaimDetailsModal();
+                showItemStatus();
+            })
+            .catch(err => console.error('Error approving claim:', err));
+        }
+
+        function handleReject(itemId) {
+            fetch(`/rejectClaim`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ item_id: itemId })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Error rejecting claim');
+                }
+                alert('Claim successfully rejected!');
+                closeClaimDetailsModal();
+                showItemStatus(); 
+            })
+            .catch(err => console.error('Error rejecting claim:', err));
+        }
+
+        function closeClaimDetailsModal() {
+            const modal = document.getElementById('claimDetailsModal');
+            modal.style.display = 'none';
+        }
+
+        function closeStatusContainer() {
+            const statusContainer = document.getElementById('statusContainer');
+            statusContainer.style.display = 'none';
+        }
+
+        function showLostItems() {
+            const claimContainer = document.getElementById('claimContainer');
+            claimContainer.style.display = 'block';
+            claimContainer.classList.add('fade-in');
+
+            fetch('/getLostItems')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error fetching lost items');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const tableBody = document.getElementById('claimTableBody');
+                    tableBody.innerHTML = ''; 
+                    const tableHeader = document.getElementById('claimTableHeader');
+                    tableHeader.innerHTML = `
+                        <tr>
+                            <th>Item Name</th>
+                            <th>Description</th>
+                            <th>Posted By</th>
+                        </tr>
+                    `;
+
+                    data.items.forEach(item => {
+                        const row = document.createElement('tr');
+                        const nameCell = document.createElement('td');
+                        const descriptionCell = document.createElement('td');
+                        const userCell = document.createElement('td');
+
+                        nameCell.textContent = item.item_name;
+                        descriptionCell.textContent = item.description;
+                        userCell.textContent = item.user_name;
+
+                        row.style.cursor = 'pointer';
+                        row.onclick = () => showItemDetails(item);
+
+                        row.appendChild(nameCell);
+                        row.appendChild(descriptionCell);
+                        row.appendChild(userCell);
+                        tableBody.appendChild(row);
+                    });
+                })
+                .catch(err => console.error('Error fetching lost items:', err));
+        }
+
+        function closeClaimContainer() {
+            const claimContainer = document.getElementById('claimContainer');
+            claimContainer.style.display = 'none';
+        }
+
+        function showClaims() {
+            const claimContainer = document.getElementById('claimContainer');
+            claimContainer.style.display = 'block';
+            claimContainer.classList.add('fade-in');
+
+            fetch('/getClaims')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error fetching claims');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const tableBody = document.getElementById('claimTableBody');
+                    tableBody.innerHTML = ''; 
+                    const tableHeader = document.getElementById('claimTableHeader');
+                    tableHeader.innerHTML = `
+                        <tr>
+                            <th>Claim ID</th>
+                            <th>Claim Date</th>
+                            <th>Item ID</th>
+                            <th>Email</th>
+                            <th>Phone Number</th>
+                            <th>Proof Description</th>
+                            <th>Status</th>
+                        </tr>
+                    `;
+
+                    data.claims.forEach(claim => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${claim.claim_id}</td>
+                            <td>${new Date(claim.claim_date).toLocaleString()}</td>
+                            <td>${claim.item_id}</td>
+                            <td>${claim.email}</td>
+                            <td>${claim.phone_number}</td>
+                            <td>${claim.proof_description}</td>
+                            <td>${claim.status}</td>
+                        `;
+                        tableBody.appendChild(row);
+                    });
+                })
+                .catch(err => console.error('Error fetching claims:', err));
+        }
+        // Filter lost items based on user search.
+        function filterLostItems() {
+            const searchTerm = document.getElementById('searchBar').value;
+
+            fetch(`/searchLostItems?query=${encodeURIComponent(searchTerm)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error fetching search results');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const tableBody = document.getElementById('claimTableBody');
+                    tableBody.innerHTML = ''; 
+                    const tableHeader = document.getElementById('claimTableHeader');
+                    tableHeader.innerHTML = `
+                        <tr>
+                            <th>Item Name</th>
+                            <th>Description</th>
+                            <th>Posted By</th>
+                        </tr>
+                    `;
+
+                    data.items.forEach(item => {
+                        const row = document.createElement('tr');
+                        const nameCell = document.createElement('td');
+                        const descriptionCell = document.createElement('td');
+                        const userCell = document.createElement('td');
+
+                        nameCell.textContent = item.item_name;
+                        descriptionCell.textContent = item.description;
+                        userCell.textContent = item.user_name;
+
+                        row.style.cursor = 'pointer';
+                        row.onclick = () => showItemDetails(item);
+
+                        row.appendChild(nameCell);
+                        row.appendChild(descriptionCell);
+                        row.appendChild(userCell);
+                        tableBody.appendChild(row);
+                    });
+                })
+                .catch(err => console.error('Error fetching search results:', err));
+        }
+    </script>
+    <div>
+        <h2 class="subHeading">Reunite Items to Their Owners</h2>
+        <button class="reportButton" onclick="showReportForm()">Report Lost Item</button>
+        <button class="claimButton" onclick="showLostItems()">Claim Lost Item</button>
+        <button class="statusButton" onclick="showItemStatus()">Item Status</button>
+        <button class="logoutButton" onclick="logout()">Log Out</button>
+    </div>
+
+    <!-- Report lost item form. -->
+    <div id="formContainer" class="formContainer" style="display: none;">
+        <h3>Report Lost Item</h3>
+        <form action="/reportLostItem" method="POST" onsubmit="submitForm(event)" enctype="multipart/form-data">
+            <label for="item-name">Item Name:</label>
+            <input type="text" id="item-name" name="item_name" required>
+            <label for="description">Description:</label>
+            <textarea id="description" name="description" rows="4" required></textarea>
+            <label for="image-file">Upload Image:</label>
+            <input type="file" id="image-file" name="image_file" accept="image/*">
+            <button type="submit">Submit</button>
+            <button type="button" onclick="closeReportForm()">Close</button>
+        </form>
+    </div>
+    <div id="statusContainer" class="statusContainer" style="display: none;">
+        <h3>Report</h3>
+        <h4 class="subHeading">Item Reported</h4>
+        <table id="statusTable" class="itemTable">
+            <thead id="statusTableHeader">
+            </thead>
+            <tbody id="statusTableBody">
+            </tbody>
+        </table>
+        <div id="claimRequestsContainer">
+        </div>
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="closeStatusContainer()">Close</button>
+        </div>
+    </div>
+    <div id="claimContainer" class="statusContainer" style="display: none;">
+        <h3>Lost Items</h3>
+        <input type="text" id="searchBar" placeholder="Search items..." oninput="filterLostItems()">
+        <table id="claimTable" class="itemTable">
+            <thead id="claimTableHeader">
+            </thead>
+            <tbody id="claimTableBody">
+            </tbody>
+        </table>
+        <button onclick="closeClaimContainer()">Close</button>
+    </div>
+    <div id="detailsContainer" class="detailsContainer" style="display: none;">
+        <h3>Item Details</h3>
+        <p id="detailsName"></p>
+        <p id="detailsDescription"></p>
+        <p id="detailsUser"></p>
+        <img id="detailsImage" src="" alt="Item Image" style="max-width: 100%; display: none;">
+        <button id="claimButton" style="display: none;">Send Claim Request</button>
+        <button onclick="closeDetailsContainer()">Close</button>
+    </div>
+    <div id="claimFormContainer" class="formContainer" style="display: none;">
+        <h3>Submit Claim</h3>
+        <form id="claimForm">
+            <input type="hidden" id="claim-item-id" name="item_id">
+            <label for="claim-email">Email:</label>
+            <input type="email" id="claim-email" name="email" required>
+            <label for="claim-phone">Phone Number:</label>
+            <input type="tel" id="claim-phone" name="phone_number" required>
+            <label for="claim-proof">Proof Description:</label>
+            <textarea id="claim-proof" name="proof_description" rows="4" required></textarea>
+            <button type="submit">Submit</button>
+            <button type="button" onclick="closeClaimForm()">Close</button>
+        </form>
+    </div>
+    <div id="claimDetailsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeClaimDetailsModal()">&times;</span>
+            <h3>Claim Details</h3>
+            <p id="modalEmail"></p>
+            <p id="modalPhone"></p>
+            <p id="modalProof"></p>
+            <p style="color: red; font-weight: bold;">Notice: Before approving, make sure the requester retrieved the lost item.</p>
+            <button id="approveButton" class="modal-action-button">Approve</button>
+            <button id="rejectButton" class="modal-action-button">Reject</button>
+        </div>
+    </div>
+</body>
+</html>
